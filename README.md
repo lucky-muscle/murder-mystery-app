@@ -7,7 +7,7 @@
 
 
 ## デモ
-[デモページはこちら](https://xxxxx.web.app)
+[デモページはこちら](https://murdermystery-f537e.web.app)
 
 ## GitHub
 [GitHubリポジトリはこちら](https://github.com/lucky-muscle/murder-mystery-app)
