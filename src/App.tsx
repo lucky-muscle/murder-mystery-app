@@ -1,3 +1,4 @@
+import "./style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { db } from "./firebase";
@@ -151,6 +152,9 @@ function App() {
   const [activePersistentSheetPageIndex, setActivePersistentSheetPageIndex] = useState(0);
   const [isPersistentSheetPanning, setIsPersistentSheetPanning] = useState(false);
   const persistentPanPointRef = useRef({ x: 0, y: 0 });
+  const [persistentSheetWindowPosition, setPersistentSheetWindowPosition] = useState({ x: 0, y: 0 });
+  const [isPersistentSheetWindowDragging, setIsPersistentSheetWindowDragging] = useState(false);
+  const persistentSheetWindowDragPointRef = useRef({ x: 0, y: 0 });
 
   const isGm = myCharacter === "GM";
 
@@ -446,6 +450,32 @@ function App() {
     setPersistentSheetScale(Math.min(400, Math.max(50, nextScale)));
   };
 
+
+  const startPersistentSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button") || target.closest(".sheet-image-stage")) return;
+    if (event.button !== 0) return;
+
+    setIsPersistentSheetWindowDragging(true);
+    persistentSheetWindowDragPointRef.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const movePersistentSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (!isPersistentSheetWindowDragging) return;
+
+    const dx = event.clientX - persistentSheetWindowDragPointRef.current.x;
+    const dy = event.clientY - persistentSheetWindowDragPointRef.current.y;
+    setPersistentSheetWindowPosition((current) => ({ x: current.x + dx, y: current.y + dy }));
+    persistentSheetWindowDragPointRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const stopPersistentSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (!isPersistentSheetWindowDragging) return;
+    setIsPersistentSheetWindowDragging(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const startPersistentSheetPan = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 2) return;
 
@@ -483,7 +513,14 @@ function App() {
         aria-modal="false"
         aria-label={activePersistentSheet.title}
       >
-        <section className="sheet-viewer-frame">
+        <section
+          className={`sheet-viewer-frame draggable-sheet-window ${isPersistentSheetWindowDragging ? "is-window-dragging" : ""}`}
+          style={{ transform: `translate(${persistentSheetWindowPosition.x}px, ${persistentSheetWindowPosition.y}px)` }}
+          onPointerDown={startPersistentSheetWindowDrag}
+          onPointerMove={movePersistentSheetWindowDrag}
+          onPointerUp={stopPersistentSheetWindowDrag}
+          onPointerCancel={stopPersistentSheetWindowDrag}
+        >
           <div className="sheet-viewer-header">
             <div>
               <span className="section-kicker">RECEIVED SHEET</span>
@@ -570,7 +607,7 @@ function App() {
           </div>
 
           <p className="sheet-viewer-help">
-            拡大縮小ボタンで表示倍率を変更できます。左クリックまたは右クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
+            ウィンドウ本体を長押ししながらドラッグすると位置を動かせます。シート画像の上では左クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
           </p>
         </section>
       </div>
@@ -1233,14 +1270,17 @@ function App() {
 
   if (screen === "createConfirm") {
     return (
-      <main className="app">
+      <main className="app dark-game-app confirm-page">
         {renderTitle()}
-        <section className="card">
+        <section className="card dark-panel confirm-card centered-form-card">
+          <div className="section-kicker">CREATE ROOM</div>
           <h2>確認</h2>
-          <p>ルームを作成しますか？</p>
-          <p>GM名：{playerName}</p>
-          <button onClick={createRoom}>作成する</button>
-          <button onClick={() => setScreen("createName")}>戻る</button>
+          <p className="confirm-lead">この名前でGMとしてルームを作成しますか？</p>
+          <p className="confirm-name">GM名：{playerName}</p>
+          <div className="form-actions centered-form-actions confirm-actions">
+            <button className="primary-action-button large-centered-button" onClick={createRoom}>作成する</button>
+            <button className="large-secondary-button" onClick={() => setScreen("createName")}>戻る</button>
+          </div>
         </section>
       </main>
     );

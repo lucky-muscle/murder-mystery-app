@@ -131,6 +131,9 @@ function OpeningScreen({
   const [openSheetPageIndex, setOpenSheetPageIndex] = useState(0);
   const [isSheetPanning, setIsSheetPanning] = useState(false);
   const panPointRef = useRef({ x: 0, y: 0 });
+  const [sheetWindowPosition, setSheetWindowPosition] = useState({ x: 0, y: 0 });
+  const [isSheetWindowDragging, setIsSheetWindowDragging] = useState(false);
+  const sheetWindowDragPointRef = useRef({ x: 0, y: 0 });
 
   const currentScheduleId = room.phase === "opening" ? "intro" : room.phase;
   const myRoleName = room.characterAssignments?.[myCharacter] || "未設定";
@@ -263,6 +266,7 @@ function OpeningScreen({
   const toggleSheet = (sheetId: string) => {
     setIsImageMissing(false);
     setOpenSheetPageIndex(0);
+    setSheetWindowPosition({ x: 0, y: 0 });
     setOpenSheetId((currentId) => currentId === sheetId ? null : sheetId);
   };
 
@@ -272,6 +276,32 @@ function OpeningScreen({
 
   const zoomSheet = (nextScale: number) => {
     setSheetScale(Math.min(400, Math.max(50, nextScale)));
+  };
+
+
+  const startSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button") || target.closest(".sheet-image-stage")) return;
+    if (event.button !== 0) return;
+
+    setIsSheetWindowDragging(true);
+    sheetWindowDragPointRef.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (!isSheetWindowDragging) return;
+
+    const dx = event.clientX - sheetWindowDragPointRef.current.x;
+    const dy = event.clientY - sheetWindowDragPointRef.current.y;
+    setSheetWindowPosition((current) => ({ x: current.x + dx, y: current.y + dy }));
+    sheetWindowDragPointRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const stopSheetWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (!isSheetWindowDragging) return;
+    setIsSheetWindowDragging(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const startSheetPan = (event: PointerEvent<HTMLDivElement>) => {
@@ -415,7 +445,14 @@ function OpeningScreen({
 
       {activeSheet && (
         <div className="sheet-viewer-layer" role="dialog" aria-modal="false" aria-label={activeSheet.title}>
-          <section className="sheet-viewer-frame">
+          <section
+            className={`sheet-viewer-frame draggable-sheet-window ${isSheetWindowDragging ? "is-window-dragging" : ""}`}
+            style={{ transform: `translate(${sheetWindowPosition.x}px, ${sheetWindowPosition.y}px)` }}
+            onPointerDown={startSheetWindowDrag}
+            onPointerMove={moveSheetWindowDrag}
+            onPointerUp={stopSheetWindowDrag}
+            onPointerCancel={stopSheetWindowDrag}
+          >
             <div className="sheet-viewer-header">
               <div>
                 <span className="section-kicker">RECEIVED SHEET</span>
@@ -492,7 +529,7 @@ function OpeningScreen({
             </div>
 
             <p className="sheet-viewer-help">
-  拡大縮小ボタンで表示倍率を変更できます。左クリックまたは右クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
+              ウィンドウ本体を長押ししながらドラッグすると位置を動かせます。シート画像の上では左クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
             </p>
           </section>
         </div>

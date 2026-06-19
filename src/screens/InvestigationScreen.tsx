@@ -426,7 +426,7 @@ function InvestigationScreen({
                   {isClaimed && <i className={`cell-owner-marker ${ownerRoleColorClass}`} aria-label={`取得者：${ownerName}`} />}
                   {isPublic && <em className="cell-public-badge">公開中</em>}
                   {isPrivateShared && <em className="cell-private-badge">密談共有</em>}
-                  {!isClaimed && <small className="cell-owner-badge">{!canUnlockByThunder ? "取得不可" : isUnlocked ? "未取得" : "未開放"}</small>}
+                  {!isClaimed && <small className="cell-owner-badge">{!canUnlockByThunder ? "雷なし" : isUnlocked ? "未取得" : "未開放"}</small>}
                 </button>
               );
             })

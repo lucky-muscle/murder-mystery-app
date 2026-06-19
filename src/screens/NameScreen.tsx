@@ -25,7 +25,7 @@ function NameScreen({
     <main className="app dark-game-app name-page">
       {renderTitle()}
 
-      <section className="card dark-panel name-card">
+      <section className="card dark-panel name-card centered-form-card">
         <div className="section-kicker">PLAYER NAME</div>
         <h2>{title}</h2>
         {subText && <p className="muted-text">{subText}</p>}
@@ -34,6 +34,7 @@ function NameScreen({
           名前
         </label>
         <input
+          className="name-input"
           id="player-name-input"
           value={playerName}
           onChange={(event) => setPlayerName(event.target.value)}
@@ -41,11 +42,11 @@ function NameScreen({
           autoComplete="off"
         />
 
-        <div className="form-actions">
-          <button className="primary-action-button" onClick={onDecide}>
+        <div className="form-actions centered-form-actions">
+          <button className="primary-action-button large-centered-button" onClick={onDecide}>
             {decideLabel}
           </button>
-          <button onClick={onBack}>戻る</button>
+          <button className="large-secondary-button" onClick={onBack}>戻る</button>
         </div>
       </section>
     </main>
