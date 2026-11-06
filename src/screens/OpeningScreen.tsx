@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 import type { Cell, Room, SpecialInvestigationSheet } from "../gameTypes";
 import { turnOrder } from "../gameConstants";
 import { phases } from "../gameData";
@@ -11,8 +11,9 @@ type OpeningScreenProps = {
   isGm: boolean;
   myCharacter: string;
   playerName: string;
+  onDistributeRuleSheet: () => void;
+  onDistributeOverviewSheet: () => void;
   onDistributeSheets: () => void;
-  onStartQuestionTime: () => void;
   onNext: () => void;
   onShareSheetWithPlayer?: (sheet: GameSheet, targetSlot: string) => void;
   onToggleSheetPublic?: (sheet: GameSheet) => void;
@@ -24,26 +25,63 @@ type GameSheet = {
   title: string;
   imageSrc: string;
   imageSrcs?: string[];
-  kind?: "normal" | "investigation" | "special";
+  fileType?: "image" | "pdf";
+  pageCount?: number;
+  kind?: "normal" | "investigation" | "special" | "ending";
   sourceId?: string;
 };
 
 const roleColorClassMap: Record<string, string> = {
   川岸道也: "role-kawagishi",
-  宮崎圭: "role-miyazaki",
+  梅村萌絵: "role-umemura",
   緑野大地: "role-midorino",
   黒坂秀樹: "role-kurosaka",
-  谷アリス: "role-tani",
+  水谷アリス: "role-mizutani",
 };
 
+const endingDefinitions = [
+  { id: "ending-1", title: "エンディング①", targetRoleName: "川岸道也", imageSrc: sheetPaths.endings.ending1 },
+  { id: "ending-2", title: "エンディング②", targetRoleName: "梅村萌絵", imageSrc: sheetPaths.endings.ending2 },
+  { id: "ending-3", title: "エンディング③", targetRoleName: "緑野大地", imageSrc: sheetPaths.endings.ending3 },
+  { id: "ending-4", title: "エンディング④", targetRoleName: "黒坂秀樹", imageSrc: sheetPaths.endings.ending4 },
+  { id: "ending-5", title: "エンディング⑤", targetRoleName: "水谷アリス", imageSrc: sheetPaths.endings.ending5 },
+] as const;
+
+function isPdfPath(src?: string) {
+  return Boolean(src && src.toLowerCase().includes(".pdf"));
+}
+
+
+function getSheetPageCount(sheet: GameSheet) {
+  if (sheet.fileType === "pdf") {
+    return sheet.pageCount || 1;
+  }
+
+  return sheet.imageSrcs?.length || 1;
+}
+
 function getSheetImageSrc(sheet: GameSheet, pageIndex = 0) {
+  if (sheet.fileType === "pdf") {
+    return `${sheet.imageSrc}#page=${pageIndex + 1}&toolbar=0&navpanes=0`;
+  }
+
   return sheet.imageSrcs?.[pageIndex] || sheet.imageSrc;
 }
+
+const ruleSheet: GameSheet = {
+  id: "rule",
+  title: "ルール説明シート",
+  imageSrc: sheetPaths.rulePages[0],
+  imageSrcs: sheetPaths.rulePages,
+  fileType: "image",
+};
 
 const overviewSheet: GameSheet = {
   id: "overview",
   title: "作品概要シート",
-  imageSrc: sheetPaths.overview,
+  imageSrc: sheetPaths.overviewPages[0],
+  imageSrcs: sheetPaths.overviewPages,
+  fileType: "image",
 };
 
 const mapSheet: GameSheet = {
@@ -58,33 +96,37 @@ function getRoleColorClass(roleName: string) {
 }
 
 function getCharacterSheet(roleName: string): GameSheet | null {
-  const imageSrc = sheetPaths.characters[roleName];
-  if (!imageSrc) return null;
+  const pages = sheetPaths.characterPages[roleName];
+  if (!pages || pages.length === 0) return null;
 
   return {
     id: `character-${roleName}`,
     title: `${roleName}キャラシート`,
-    imageSrc,
+    imageSrc: pages[0],
+    imageSrcs: pages,
+    fileType: "image",
   };
 }
 
 function getAdditionalInfoSheet(roleName: string): GameSheet | null {
-  const imageSrc = sheetPaths.additional[roleName];
-  if (!imageSrc) return null;
+  const pages = sheetPaths.additionalPages[roleName];
+  if (!pages || pages.length === 0) return null;
 
   return {
     id: `additional-${roleName}`,
     title: `${roleName}追加シート`,
-    imageSrc,
+    imageSrc: pages[0],
+    imageSrcs: pages,
+    fileType: "image",
   };
 }
 
 function getCellColumnTitle(cellId: string) {
   if (cellId.startsWith("item-A-")) return "川岸道也";
-  if (cellId.startsWith("item-B-")) return "宮崎圭";
+  if (cellId.startsWith("item-B-")) return "梅村萌絵";
   if (cellId.startsWith("item-C-")) return "緑野大地";
   if (cellId.startsWith("item-D-")) return "黒坂秀樹";
-  if (cellId.startsWith("item-E-")) return "谷アリス";
+  if (cellId.startsWith("item-E-")) return "水谷アリス";
   if (cellId.startsWith("victim-")) return "被害者の様子";
   if (cellId.startsWith("villa-")) return "山荘の様子";
   return "調査カード";
@@ -95,6 +137,7 @@ function getCellSheet(cell: Cell): GameSheet {
     id: `investigation-card-${cell.id}`,
     title: `${getCellColumnTitle(cell.id)} ${cell.label}`,
     imageSrc: cell.imageSrc || sheetPaths.investigation(cell.id),
+    fileType: "image",
     kind: "investigation",
     sourceId: cell.id,
   };
@@ -105,10 +148,27 @@ function getSpecialSheet(sheet: SpecialInvestigationSheet): GameSheet {
     id: `special-investigation-${sheet.id}`,
     title: sheet.title,
     imageSrc: sheet.imageSrc,
+    fileType: "image",
     kind: "special",
     sourceId: sheet.id,
   };
 }
+
+function getEndingSheetById(endingSheetId?: string | null): GameSheet | null {
+  if (!endingSheetId) return null;
+  const definition = endingDefinitions.find((item) => item.id === endingSheetId);
+  if (!definition) return null;
+
+  return {
+    id: definition.id,
+    title: definition.title,
+    imageSrc: definition.imageSrc,
+    fileType: "image",
+    kind: "ending",
+    sourceId: definition.id,
+  };
+}
+
 
 function OpeningScreen({
   renderTitle,
@@ -116,14 +176,16 @@ function OpeningScreen({
   isGm,
   myCharacter,
   playerName,
+  onDistributeRuleSheet,
+  onDistributeOverviewSheet,
   onDistributeSheets,
-  onStartQuestionTime,
   onNext,
   onShareSheetWithPlayer,
   onToggleSheetPublic,
 }: OpeningScreenProps) {
   const [openSheetId, setOpenSheetId] = useState<string | null>(null);
-  const [showReceiveWindow, setShowReceiveWindow] = useState(true);
+  const [showRuleSheetReceiveWindow, setShowRuleSheetReceiveWindow] = useState(false);
+  const [showOverviewSheetReceiveWindow, setShowOverviewSheetReceiveWindow] = useState(false);
   const [showCharacterSheetReceiveWindow, setShowCharacterSheetReceiveWindow] = useState(false);
   const [showRoleReveal, setShowRoleReveal] = useState(false);
   const [isImageMissing, setIsImageMissing] = useState(false);
@@ -139,7 +201,7 @@ function OpeningScreen({
   const myRoleName = room.characterAssignments?.[myCharacter] || "未設定";
 
   const availableSheets = useMemo<GameSheet[]>(() => {
-    const sheets: GameSheet[] = [overviewSheet];
+    const sheets: GameSheet[] = [];
 
     if (isGm) {
       const assignedRoleNames = turnOrder
@@ -156,19 +218,25 @@ function OpeningScreen({
 
       const allInvestigationCards = (room.cells || []).map(getCellSheet);
       const allSpecialSheets = (room.specialInvestigationSheets || []).map(getSpecialSheet);
-      sheets.push(...allCharacterSheets, mapSheet, ...allAdditionalSheets, ...allInvestigationCards, ...allSpecialSheets);
+      const allEndingSheets = endingDefinitions
+        .map((definition) => getEndingSheetById(definition.id))
+        .filter((sheet): sheet is GameSheet => Boolean(sheet));
+      sheets.push(ruleSheet, overviewSheet, ...allCharacterSheets, mapSheet, ...allAdditionalSheets, ...allInvestigationCards, ...allSpecialSheets, ...allEndingSheets);
       return sheets;
+    }
+
+    if (room.ruleSheetDistributed) {
+      sheets.push(ruleSheet);
+    }
+
+    if (room.overviewSheetDistributed) {
+      sheets.push(overviewSheet);
     }
 
     if (room.characterSheetsDistributed) {
       const myCharacterSheet = getCharacterSheet(myRoleName);
       if (myCharacterSheet) sheets.push(myCharacterSheet);
       sheets.push(mapSheet);
-    }
-
-    if (room.additionalInfoDistributed) {
-      const myAdditionalInfoSheet = getAdditionalInfoSheet(myRoleName);
-      if (myAdditionalInfoSheet) sheets.push(myAdditionalInfoSheet);
     }
 
     const manualSheetViewers = room.manualSheetViewers || {};
@@ -182,6 +250,8 @@ function OpeningScreen({
       .filter((roleName): roleName is string => Boolean(roleName));
 
     const shareableNormalSheets = [
+      ruleSheet,
+      overviewSheet,
       ...assignedRoleNames.map((roleName) => getCharacterSheet(roleName)).filter((sheet): sheet is GameSheet => Boolean(sheet)),
       mapSheet,
       ...assignedRoleNames.map((roleName) => getAdditionalInfoSheet(roleName)).filter((sheet): sheet is GameSheet => Boolean(sheet)),
@@ -201,12 +271,21 @@ function OpeningScreen({
       .filter((sheet) => sheet.isPublic || sheet.viewers?.includes(myCharacter) || publicSheets.has(`special-investigation-${sheet.id}`) || manualSheets.has(`special-investigation-${sheet.id}`))
       .map(getSpecialSheet);
 
-    sheets.push(...viewableInvestigationCards, ...viewableSpecialSheets);
+    if (room.phase === "ending") {
+      const allInvestigationCards = (room.cells || []).map(getCellSheet);
+      const allSpecialSheets = (room.specialInvestigationSheets || []).map(getSpecialSheet);
+      const endingSheet = getEndingSheetById(room.endingSheetId || undefined);
+      sheets.push(...allInvestigationCards, ...allSpecialSheets);
+      if (endingSheet && !sheets.some((existing) => existing.id === endingSheet.id)) sheets.push(endingSheet);
+    } else {
+      sheets.push(...viewableInvestigationCards, ...viewableSpecialSheets);
+    }
 
     return sheets;
   }, [room, isGm, myRoleName, myCharacter]);
 
   const activeSheet = availableSheets.find((sheet) => sheet.id === openSheetId);
+  const activeSheetPageCount = activeSheet ? getSheetPageCount(activeSheet) : 1;
 
   const joinedSlots = turnOrder.filter((slot) => Boolean(room.players?.[slot]));
   const orderedSlots = room.investigationOrderDecided && room.investigationTurnOrder?.length
@@ -232,7 +311,7 @@ function OpeningScreen({
       }),
   ];
 
-  const openingHeading = room.questionTimeStarted ? "質問タイム" : "作品概要ルール説明";
+  const openingHeading = "ルール説明";
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -255,6 +334,20 @@ function OpeningScreen({
 
     return () => window.clearTimeout(timerId);
   }, [isGm, myRoleName]);
+
+  useEffect(() => {
+    if (isGm) return;
+    if (!room.ruleSheetDistributed) return;
+
+    setShowRuleSheetReceiveWindow(true);
+  }, [isGm, room.ruleSheetDistributed]);
+
+  useEffect(() => {
+    if (isGm) return;
+    if (!room.overviewSheetDistributed) return;
+
+    setShowOverviewSheetReceiveWindow(true);
+  }, [isGm, room.overviewSheetDistributed]);
 
   useEffect(() => {
     if (isGm) return;
@@ -331,6 +424,36 @@ function OpeningScreen({
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const goToPreviousSheetPage = () => {
+    if (!activeSheet || activeSheetPageCount <= 1) return;
+
+    setIsImageMissing(false);
+    setOpenSheetPageIndex((index) => Math.max(0, index - 1));
+  };
+
+  const goToNextSheetPage = () => {
+    if (!activeSheet || activeSheetPageCount <= 1) return;
+
+    setIsImageMissing(false);
+    setOpenSheetPageIndex((index) => Math.min(activeSheetPageCount - 1, index + 1));
+  };
+
+  const handleSheetStageClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!activeSheet || activeSheetPageCount <= 1) return;
+
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedX = event.clientX - rect.left;
+
+    if (clickedX < rect.width / 2) {
+      goToPreviousSheetPage();
+    } else {
+      goToNextSheetPage();
+    }
+  };
+
   return (
     <main className="app dark-game-app opening-page">
       {renderTitle()}
@@ -377,35 +500,33 @@ function OpeningScreen({
             {isGm ? "GMとして進行中" : `あなたの名前：${playerName}`}
           </p>
 
-          {room.questionTimeStarted ? (
-            <div className="question-time-notice">
-              <strong>質問タイム</strong>
-              <p>この時間では作品内容についてプレイヤー間で話すことは禁止です。</p>
-              <p>自分の情報を漏らしてはいけません。</p>
-            </div>
-          ) : (
-            <p className="opening-description">
-              GMの案内に従い、作品概要と進行ルールを確認してください。このオープニング画面は、シートを開いている間も背景として保持されます。
-            </p>
-          )}
+          <p className="opening-description">
+            GMの案内に従い、作品概要と進行ルールを確認してください。
+          </p>
 
           {isGm && (
             <div className="opening-gm-control">
-              {!room.characterSheetsDistributed && (
+              {!room.ruleSheetDistributed && (
+                <button className="primary-action-button" onClick={onDistributeRuleSheet}>
+                  ルール説明シート配布
+                </button>
+              )}
+
+              {room.ruleSheetDistributed && !room.overviewSheetDistributed && (
+                <button className="primary-action-button" onClick={onDistributeOverviewSheet}>
+                  作品概要シート配布
+                </button>
+              )}
+
+              {room.ruleSheetDistributed && room.overviewSheetDistributed && !room.characterSheetsDistributed && (
                 <button className="primary-action-button" onClick={onDistributeSheets}>
                   キャラシート配布
                 </button>
               )}
 
-              {room.characterSheetsDistributed && !room.questionTimeStarted && (
-                <button className="primary-action-button" onClick={onStartQuestionTime}>
-                  質問タイムへ
-                </button>
-              )}
-
-              {room.characterSheetsDistributed && room.questionTimeStarted && (
+              {room.ruleSheetDistributed && room.overviewSheetDistributed && room.characterSheetsDistributed && (
                 <button className="primary-action-button" onClick={onNext}>
-                  調査順番決定へ
+                  議論前半へ
                 </button>
               )}
             </div>
@@ -460,11 +581,20 @@ function OpeningScreen({
               </div>
 
               <div className="sheet-viewer-actions">
-                {activeSheet.imageSrcs && activeSheet.imageSrcs.length > 1 && (
+                {activeSheetPageCount > 1 && (
                   <div className="sheet-page-controls" aria-label="ページ切り替え">
-                    <button onClick={() => { setIsImageMissing(false); setOpenSheetPageIndex((index) => Math.max(0, index - 1)); }} disabled={openSheetPageIndex <= 0}>←</button>
-                    <span>{openSheetPageIndex + 1} / {activeSheet.imageSrcs.length}</span>
-                    <button onClick={() => { setIsImageMissing(false); setOpenSheetPageIndex((index) => Math.min(activeSheet.imageSrcs!.length - 1, index + 1)); }} disabled={openSheetPageIndex >= activeSheet.imageSrcs.length - 1}>→</button>
+                    <button onClick={goToPreviousSheetPage} disabled={openSheetPageIndex <= 0}>
+                      ← 前のページ
+                    </button>
+
+                    <span>{openSheetPageIndex + 1} / {activeSheetPageCount}</span>
+
+                    <button
+                      onClick={goToNextSheetPage}
+                      disabled={openSheetPageIndex >= activeSheetPageCount - 1}
+                    >
+                      次のページ →
+                    </button>
                   </div>
                 )}
 
@@ -509,6 +639,7 @@ function OpeningScreen({
               onPointerUp={stopSheetPan}
               onPointerCancel={stopSheetPan}
               onContextMenu={(event) => event.preventDefault()}
+              onClick={handleSheetStageClick}
             >
               {isImageMissing ? (
                 <div className="sheet-image-placeholder">
@@ -516,32 +647,57 @@ function OpeningScreen({
                   <p>対応する画像を <code>public/sheets/</code> 以下に置くと、ここに表示されます。</p>
                 </div>
               ) : (
-                <div className="sheet-image-canvas" style={{ width: `${sheetScale}%` }}>
-                  <img
-                    src={getSheetImageSrc(activeSheet, openSheetPageIndex)}
-                    alt={activeSheet.title}
-                    className="overview-sheet-image"
-                    draggable={false}
-                    onError={() => setIsImageMissing(true)}
-                  />
+                <div
+                  className={`sheet-image-canvas ${activeSheet.fileType === "pdf" ? "is-pdf" : ""}`}
+                  style={{ width: `${sheetScale}%` }}
+                >
+                  {activeSheet.fileType === "pdf" ? (
+                    <iframe
+                      key={`${activeSheet.id}-${openSheetPageIndex}`}
+                      src={getSheetImageSrc(activeSheet, openSheetPageIndex)}
+                      title={activeSheet.title}
+                      className="sheet-pdf-frame"
+                    />
+                  ) : (
+                    <img
+                      src={getSheetImageSrc(activeSheet, openSheetPageIndex)}
+                      alt={activeSheet.title}
+                      className="overview-sheet-image"
+                      draggable={false}
+                      onError={() => setIsImageMissing(true)}
+                    />
+                  )}
                 </div>
               )}
             </div>
 
             <p className="sheet-viewer-help">
-              ウィンドウ本体を長押ししながらドラッグすると位置を動かせます。シート画像の上では左クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
+              複数ページのシートは、画像の左半分クリックで前ページ、右半分クリックで次ページへ切り替えられます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
             </p>
           </section>
         </div>
       )}
 
-      {showReceiveWindow && (
+      {showRuleSheetReceiveWindow && (
+        <div className="receive-window-backdrop" role="dialog" aria-modal="true">
+          <div className="receive-window dark-modal">
+            <span className="section-kicker">SYSTEM MESSAGE</span>
+            <h2>ルール説明シートを受け取りました</h2>
+            <p>左側の捜査資料から確認できます。</p>
+            <button className="primary-action-button" onClick={() => setShowRuleSheetReceiveWindow(false)}>
+              確認
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showOverviewSheetReceiveWindow && (
         <div className="receive-window-backdrop" role="dialog" aria-modal="true">
           <div className="receive-window dark-modal">
             <span className="section-kicker">SYSTEM MESSAGE</span>
             <h2>作品概要シートを受け取りました</h2>
-            <p>左側の捜査資料から、いつでも表示できます。</p>
-            <button className="primary-action-button" onClick={() => setShowReceiveWindow(false)}>
+            <p>左側の捜査資料から確認できます。</p>
+            <button className="primary-action-button" onClick={() => setShowOverviewSheetReceiveWindow(false)}>
               確認
             </button>
           </div>

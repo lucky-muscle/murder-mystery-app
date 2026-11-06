@@ -5,18 +5,18 @@ export const turnOrder = ["A", "B", "C", "D", "E"];
 
 export const characterNames = [
   "川岸道也",
-  "宮崎圭",
+  "梅村萌絵",
   "緑野大地",
   "黒坂秀樹",
-  "谷アリス",
+  "水谷アリス",
 ];
 
 const characterCellDefinitions = [
   { slot: "A", name: "川岸道也" },
-  { slot: "B", name: "宮崎圭" },
+  { slot: "B", name: "梅村萌絵" },
   { slot: "C", name: "緑野大地" },
   { slot: "D", name: "黒坂秀樹" },
-  { slot: "E", name: "谷アリス" },
+  { slot: "E", name: "水谷アリス" },
 ];
 
 function makeInvestigationImageSrc(cellId: string) {
@@ -40,7 +40,7 @@ export const initialCells: Cell[] = [1, 2, 3, 4].flatMap((rowNumber) => [
   {
     id: `victim-${rowNumber}`,
     label: `調査${rowNumber}`,
-    content: `被害者・梅村萌絵の様子${rowNumber}の内容`,
+    content: `被害者・宮崎圭の様子${rowNumber}の内容`,
     owner: null,
     imageSrc: makeInvestigationImageSrc(`victim-${rowNumber}`),
     isPublic: false,
@@ -59,7 +59,7 @@ export const initialCells: Cell[] = [1, 2, 3, 4].flatMap((rowNumber) => [
   },
 ]);
 
-export const initialSpecialInvestigationSheets: SpecialInvestigationSheet[] = [1, 2, 3, 4, 5].map((number) => ({
+export const initialSpecialInvestigationSheets: SpecialInvestigationSheet[] = [1, 2, 3, 4, 5, 6, 7].map((number) => ({
   id: `special-${number}`,
   title: `特別調査${number}`,
   imageSrc: sheetPaths.specialInvestigation(`special-${number}`),

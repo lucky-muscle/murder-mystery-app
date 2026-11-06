@@ -11,10 +11,16 @@ export type Phase =
   | "opening"
   | "investigation"
   | "break"
-  | "debate"
   | "reasoning"
   | "vote"
   | "ending";
+
+export type EndingSheetId =
+  | "ending-1"
+  | "ending-2"
+  | "ending-3"
+  | "ending-4"
+  | "ending-5";
 
 export type Cell = {
   id: string;
@@ -53,16 +59,15 @@ export type Room = {
   specialInvestigationSheets?: SpecialInvestigationSheet[];
   manualSheetViewers?: Record<string, string[]>;
   publicSheetIds?: string[];
+  ruleSheetDistributed?: boolean;
+  overviewSheetDistributed?: boolean;
   characterSheetsDistributed?: boolean;
-  questionTimeStarted?: boolean;
   investigationRound?: 1 | 2;
   investigationTurnOrder?: string[];
   investigationOrderDecided?: boolean;
   investigationStarted?: boolean;
   investigationStartedAt?: number | null;
-  investigationDurationSeconds?: number;
-  additionalInfoDistributed?: boolean;
   privateTalk?: PrivateTalk | null;
   votes?: Record<string, string>;
-  endingSheetRoleName?: string | null;
+  endingSheetId?: EndingSheetId | null;
 };

@@ -1,6 +1,6 @@
 import "./style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 import { db } from "./firebase";
 import {
   doc,
@@ -10,8 +10,8 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-import type { Room, Screen, Cell, SpecialInvestigationSheet } from "./gameTypes";
-import { characterNames, initialCells, initialSpecialInvestigationSheets, turnOrder } from "./gameConstants";
+import type { Room, Screen, Cell, SpecialInvestigationSheet, EndingSheetId } from "./gameTypes";
+import { initialCells, initialSpecialInvestigationSheets, turnOrder } from "./gameConstants";
 import { phases } from "./gameData";
 import { sheetPaths } from "./sheetPaths";
 
@@ -29,26 +29,89 @@ type GameSheet = {
   title: string;
   imageSrc: string;
   imageSrcs?: string[];
-  kind?: "normal" | "investigation" | "special";
+  fileType?: "image" | "pdf";
+  pageCount?: number;
+  kind?: "normal" | "investigation" | "special" | "ending";
   sourceId?: string;
 };
 
 const roleColorClassMap: Record<string, string> = {
   川岸道也: "role-kawagishi",
-  宮崎圭: "role-miyazaki",
+  梅村萌絵: "role-umemura",
   緑野大地: "role-midorino",
   黒坂秀樹: "role-kurosaka",
-  谷アリス: "role-tani",
+  水谷アリス: "role-mizutani",
 };
 
+const endingDefinitions: {
+  id: EndingSheetId;
+  title: string;
+  targetRoleName: string;
+  imageSrcs: string[];
+}[] = [
+  {
+    id: "ending-1",
+    title: "エンディング①",
+    targetRoleName: "川岸道也",
+    imageSrcs: sheetPaths.endingPages.ending1,
+  },
+  {
+    id: "ending-2",
+    title: "エンディング②",
+    targetRoleName: "梅村萌絵",
+    imageSrcs: sheetPaths.endingPages.ending2,
+  },
+  {
+    id: "ending-3",
+    title: "エンディング③",
+    targetRoleName: "緑野大地",
+    imageSrcs: sheetPaths.endingPages.ending3,
+  },
+  {
+    id: "ending-4",
+    title: "エンディング④",
+    targetRoleName: "黒坂秀樹",
+    imageSrcs: sheetPaths.endingPages.ending4,
+  },
+  {
+    id: "ending-5",
+    title: "エンディング⑤",
+    targetRoleName: "水谷アリス",
+    imageSrcs: sheetPaths.endingPages.ending5,
+  },
+];
+
+function isPdfPath(src?: string) {
+  return Boolean(src && src.toLowerCase().includes(".pdf"));
+}
+
+function getSheetPageCount(sheet: GameSheet) {
+  if (sheet.fileType === "pdf" || isPdfPath(sheet.imageSrc)) return sheet.pageCount || 1;
+  return sheet.imageSrcs?.length || 1;
+}
+
+
 function getSheetImageSrc(sheet: GameSheet, pageIndex = 0) {
+  if (sheet.fileType === "pdf" || isPdfPath(sheet.imageSrc)) {
+    return `${sheet.imageSrc}#page=${pageIndex + 1}&toolbar=0&navpanes=0&view=FitH`;
+  }
   return sheet.imageSrcs?.[pageIndex] || sheet.imageSrc;
 }
+
+const ruleSheet: GameSheet = {
+  id: "rule",
+  title: "ルール説明シート",
+  imageSrc: sheetPaths.rulePages[0],
+  imageSrcs: sheetPaths.rulePages,
+  fileType: "image",
+};
 
 const overviewSheet: GameSheet = {
   id: "overview",
   title: "作品概要シート",
-  imageSrc: sheetPaths.overview,
+  imageSrc: sheetPaths.overviewPages[0],
+  imageSrcs: sheetPaths.overviewPages,
+  fileType: "image",
 };
 
 const mapSheet: GameSheet = {
@@ -63,37 +126,52 @@ function getRoleColorClass(roleName: string) {
 }
 
 function getCharacterSheet(roleName: string): GameSheet | null {
-  const imageSrc = sheetPaths.characters[roleName];
-  if (!imageSrc) return null;
+  const pages = sheetPaths.characterPages[roleName];
+  if (!pages || pages.length === 0) return null;
 
   return {
     id: `character-${roleName}`,
     title: `${roleName}キャラシート`,
-    imageSrc,
+    imageSrc: pages[0],
+    imageSrcs: pages,
+    fileType: "image",
   };
 }
 
 function getAdditionalInfoSheet(roleName: string): GameSheet | null {
-  const imageSrc = sheetPaths.additional[roleName];
-  if (!imageSrc) return null;
+  const pages = sheetPaths.additionalPages[roleName];
+  if (!pages || pages.length === 0) return null;
 
   return {
     id: `additional-${roleName}`,
     title: `${roleName}追加シート`,
-    imageSrc,
+    imageSrc: pages[0],
+    imageSrcs: pages,
+    fileType: "image",
   };
 }
 
 
-function getEndingSheet(roleName: string): GameSheet | null {
-  const imageSrc = sheetPaths.endings[roleName];
-  if (!imageSrc) return null;
+function getEndingSheetById(endingSheetId: EndingSheetId | string | null | undefined): GameSheet | null {
+  if (!endingSheetId) return null;
+
+  const definition = endingDefinitions.find((item) => item.id === endingSheetId);
+  if (!definition || definition.imageSrcs.length === 0) return null;
 
   return {
-    id: `ending-${roleName}`,
-    title: `${roleName}エンディング`,
-    imageSrc,
+    id: definition.id,
+    title: definition.title,
+    imageSrc: definition.imageSrcs[0],
+    imageSrcs: definition.imageSrcs,
+    fileType: "image",
+    kind: "ending",
+    sourceId: definition.id,
   };
+}
+
+function getEndingSheetByRoleName(roleName: string | null | undefined): GameSheet | null {
+  const definition = endingDefinitions.find((item) => item.targetRoleName === roleName);
+  return definition ? getEndingSheetById(definition.id) : null;
 }
 
 function getCellSheet(room: Room, cell: Cell): GameSheet {
@@ -101,6 +179,7 @@ function getCellSheet(room: Room, cell: Cell): GameSheet {
     id: `investigation-card-${cell.id}`,
     title: `${getCellColumnTitle(cell.id)} ${cell.label}`,
     imageSrc: cell.imageSrc || sheetPaths.investigation(cell.id),
+    fileType: "image",
     kind: "investigation",
     sourceId: cell.id,
   };
@@ -111,6 +190,7 @@ function getSpecialSheet(sheet: SpecialInvestigationSheet): GameSheet {
     id: `special-investigation-${sheet.id}`,
     title: sheet.title,
     imageSrc: sheet.imageSrc,
+    fileType: "image",
     kind: "special",
     sourceId: sheet.id,
   };
@@ -118,10 +198,10 @@ function getSpecialSheet(sheet: SpecialInvestigationSheet): GameSheet {
 
 function getCellColumnTitle(cellId: string) {
   if (cellId.startsWith("item-A-")) return "川岸道也";
-  if (cellId.startsWith("item-B-")) return "宮崎圭";
+  if (cellId.startsWith("item-B-")) return "梅村萌絵";
   if (cellId.startsWith("item-C-")) return "緑野大地";
   if (cellId.startsWith("item-D-")) return "黒坂秀樹";
-  if (cellId.startsWith("item-E-")) return "谷アリス";
+  if (cellId.startsWith("item-E-")) return "水谷アリス";
   if (cellId.startsWith("victim-")) return "被害者の様子";
   if (cellId.startsWith("villa-")) return "山荘の様子";
   return "調査カード";
@@ -155,6 +235,8 @@ function App() {
   const [persistentSheetWindowPosition, setPersistentSheetWindowPosition] = useState({ x: 0, y: 0 });
   const [isPersistentSheetWindowDragging, setIsPersistentSheetWindowDragging] = useState(false);
   const persistentSheetWindowDragPointRef = useRef({ x: 0, y: 0 });
+  const [isPersistentSheetFullscreen, setIsPersistentSheetFullscreen] = useState(false);
+  const persistentSheetViewerRef = useRef<HTMLDivElement | null>(null);
 
   const isGm = myCharacter === "GM";
 
@@ -198,7 +280,7 @@ function App() {
   const availablePersistentSheets = useMemo<GameSheet[]>(() => {
     if (!room) return [];
 
-    const sheets: GameSheet[] = [overviewSheet];
+    const sheets: GameSheet[] = [];
 
     if (isGm) {
       const assignedRoleNames = turnOrder
@@ -215,11 +297,13 @@ function App() {
 
       const allInvestigationCards = (room.cells || []).map((cell) => getCellSheet(room, cell));
       const allSpecialSheets = (room.specialInvestigationSheets || []).map(getSpecialSheet);
-      const allEndingSheets = characterNames
-        .map((roleName) => getEndingSheet(roleName))
+      const allEndingSheets = endingDefinitions
+        .map((definition) => getEndingSheetById(definition.id))
         .filter((sheet): sheet is GameSheet => Boolean(sheet));
 
       sheets.push(
+        ruleSheet,
+        overviewSheet,
         ...allCharacterSheets,
         mapSheet,
         ...allAdditionalSheets,
@@ -231,15 +315,18 @@ function App() {
       return sheets;
     }
 
+    if (room.ruleSheetDistributed) {
+      sheets.push(ruleSheet);
+    }
+
+    if (room.overviewSheetDistributed) {
+      sheets.push(overviewSheet);
+    }
+
     if (room.characterSheetsDistributed) {
       const myCharacterSheet = getCharacterSheet(getMyRoleName());
       if (myCharacterSheet) sheets.push(myCharacterSheet);
       sheets.push(mapSheet);
-    }
-
-    if (room.additionalInfoDistributed) {
-      const myAdditionalInfoSheet = getAdditionalInfoSheet(getMyRoleName());
-      if (myAdditionalInfoSheet) sheets.push(myAdditionalInfoSheet);
     }
 
     const manualSheetViewers = (room.manualSheetViewers || {}) as Record<string, string[]>;
@@ -252,6 +339,8 @@ function App() {
       .map((slot) => room.characterAssignments?.[slot])
       .filter((roleName): roleName is string => Boolean(roleName));
     const shareableNormalSheets = [
+      ruleSheet,
+      overviewSheet,
       ...assignedRoleNames.map((roleName) => getCharacterSheet(roleName)).filter((sheet): sheet is GameSheet => Boolean(sheet)),
       mapSheet,
       ...assignedRoleNames.map((roleName) => getAdditionalInfoSheet(roleName)).filter((sheet): sheet is GameSheet => Boolean(sheet)),
@@ -271,11 +360,14 @@ function App() {
       .filter((sheet) => sheet.isPublic || sheet.viewers?.includes(myCharacter) || publicSheets.has(`special-investigation-${sheet.id}`) || manualSheets.has(`special-investigation-${sheet.id}`))
       .map(getSpecialSheet);
 
-    sheets.push(...viewableInvestigationCards, ...viewableSpecialSheets);
-
-    if (room.phase === "ending" && room.endingSheetRoleName) {
-      const endingSheet = getEndingSheet(room.endingSheetRoleName);
-      if (endingSheet) sheets.push(endingSheet);
+    if (room.phase === "ending") {
+      const allInvestigationCards = (room.cells || []).map((cell) => getCellSheet(room, cell));
+      const allSpecialSheets = (room.specialInvestigationSheets || []).map(getSpecialSheet);
+      const endingSheet = getEndingSheetById(room.endingSheetId);
+      sheets.push(...allInvestigationCards, ...allSpecialSheets);
+      if (endingSheet && !sheets.some((existing) => existing.id === endingSheet.id)) sheets.push(endingSheet);
+    } else {
+      sheets.push(...viewableInvestigationCards, ...viewableSpecialSheets);
     }
 
     return sheets;
@@ -285,18 +377,61 @@ function App() {
     (sheet) => sheet.id === activePersistentSheetId
   );
 
+  const closePersistentSheet = () => {
+    setActivePersistentSheetId(null);
+    setIsPersistentSheetFullscreen(false);
+
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {
+        // iOS Safariなど、Fullscreen APIが使えない環境ではCSS全画面だけ解除します。
+      });
+    }
+  };
+
+  const togglePersistentSheetFullscreen = () => {
+    const nextFullscreen = !isPersistentSheetFullscreen;
+    setIsPersistentSheetFullscreen(nextFullscreen);
+    setPersistentSheetWindowPosition({ x: 0, y: 0 });
+
+    const viewerElement = persistentSheetViewerRef.current;
+
+    if (nextFullscreen && viewerElement?.requestFullscreen && !document.fullscreenElement) {
+      void viewerElement.requestFullscreen().catch(() => {
+        // Fullscreen APIが使えない端末でも、CSSで全画面風に表示します。
+      });
+      return;
+    }
+
+    if (!nextFullscreen && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {
+        // Fullscreen APIが使えない環境ではCSS全画面だけ解除します。
+      });
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "e") return;
       if (!activePersistentSheetId) return;
 
       event.preventDefault();
-      setActivePersistentSheetId(null);
+      closePersistentSheet();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activePersistentSheetId]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsPersistentSheetFullscreen(false);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
 
   const renderTitle = () => {
     return (
@@ -320,10 +455,8 @@ function App() {
     if (phase === "opening") return "intro";
     if (phase === "investigation") return room.investigationRound === 2 ? "investigation2" : "investigation1";
     if (phase === "break") return "break";
-    if (phase === "debate") return "debate";
     if (phase === "reasoning") return "reasoning";
-    if (phase === "vote") return "vote";
-    if (phase === "ending") return "ending";
+    if (phase === "vote" || phase === "ending") return "vote";
     return phase;
   };
 
@@ -387,10 +520,18 @@ function App() {
               key={sheet.id}
               className={`sheet-index-button ${activePersistentSheetId === sheet.id ? "active" : ""}`}
               onClick={() => {
-                setIsPersistentSheetImageMissing(false);
-                setActivePersistentSheetPageIndex(0);
-                setActivePersistentSheetId((currentId) => currentId === sheet.id ? null : sheet.id);
-              }}
+              setIsPersistentSheetImageMissing(false);
+              setActivePersistentSheetPageIndex(0);
+              setPersistentSheetWindowPosition({ x: 0, y: 0 });
+
+              if (activePersistentSheetId === sheet.id) {
+              closePersistentSheet();
+              return;
+            }
+
+            setIsPersistentSheetFullscreen(false);
+            setActivePersistentSheetId(sheet.id);
+          }}
               aria-pressed={activePersistentSheetId === sheet.id}
             >
               <span>{sheet.title}</span>
@@ -503,36 +644,91 @@ function App() {
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const activePersistentSheetPageCount = activePersistentSheet
+    ? getSheetPageCount(activePersistentSheet)
+    : 1;
+
+  const goToPreviousPersistentSheetPage = () => {
+    if (!activePersistentSheet || activePersistentSheetPageCount <= 1) return;
+
+    setIsPersistentSheetImageMissing(false);
+    setActivePersistentSheetPageIndex((index) => Math.max(0, index - 1));
+  };
+
+  const goToNextPersistentSheetPage = () => {
+    if (!activePersistentSheet || activePersistentSheetPageCount <= 1) return;
+
+    setIsPersistentSheetImageMissing(false);
+    setActivePersistentSheetPageIndex((index) =>
+      Math.min(activePersistentSheetPageCount - 1, index + 1)
+    );
+  };
+
+  const handlePersistentSheetStageClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!activePersistentSheet || activePersistentSheetPageCount <= 1) return;
+
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedX = event.clientX - rect.left;
+
+    if (clickedX < rect.width / 2) {
+      goToPreviousPersistentSheetPage();
+    } else {
+      goToNextPersistentSheetPage();
+    }
+  };
+
   const renderPersistentSheetViewer = () => {
     if (!activePersistentSheet) return null;
 
     return (
       <div
-        className="sheet-viewer-layer persistent-sheet-viewer-layer"
+        ref={persistentSheetViewerRef}
+        className={`sheet-viewer-layer persistent-sheet-viewer-layer ${isPersistentSheetFullscreen ? "is-sheet-fullscreen" : ""}`}
         role="dialog"
         aria-modal="false"
         aria-label={activePersistentSheet.title}
       >
         <section
-          className={`sheet-viewer-frame draggable-sheet-window ${isPersistentSheetWindowDragging ? "is-window-dragging" : ""}`}
-          style={{ transform: `translate(${persistentSheetWindowPosition.x}px, ${persistentSheetWindowPosition.y}px)` }}
+          className={`sheet-viewer-frame draggable-sheet-window ${isPersistentSheetWindowDragging ? "is-window-dragging" : ""} ${isPersistentSheetFullscreen ? "is-sheet-fullscreen" : ""}`}
+          style={{ transform: isPersistentSheetFullscreen ? "none" : `translate(${persistentSheetWindowPosition.x}px, ${persistentSheetWindowPosition.y}px)` }}
           onPointerDown={startPersistentSheetWindowDrag}
           onPointerMove={movePersistentSheetWindowDrag}
           onPointerUp={stopPersistentSheetWindowDrag}
           onPointerCancel={stopPersistentSheetWindowDrag}
         >
           <div className="sheet-viewer-header">
-            <div>
+            <div className="sheet-viewer-title-block">
               <span className="section-kicker">RECEIVED SHEET</span>
               <h2>{activePersistentSheet.title}</h2>
+              <button
+                className="sheet-fullscreen-button sheet-fullscreen-button-prominent"
+                onClick={togglePersistentSheetFullscreen}
+                aria-pressed={isPersistentSheetFullscreen}
+                aria-label={isPersistentSheetFullscreen ? "通常表示に戻す" : "シートを全画面表示する"}
+              >
+                {isPersistentSheetFullscreen ? "通常表示" : "全画面表示"}
+              </button>
             </div>
 
             <div className="sheet-viewer-actions">
-              {activePersistentSheet.imageSrcs && activePersistentSheet.imageSrcs.length > 1 && (
+              {activePersistentSheetPageCount > 1 && (
                 <div className="sheet-page-controls" aria-label="ページ切り替え">
-                  <button onClick={() => { setIsPersistentSheetImageMissing(false); setActivePersistentSheetPageIndex((index) => Math.max(0, index - 1)); }} disabled={activePersistentSheetPageIndex <= 0}>←</button>
-                  <span>{activePersistentSheetPageIndex + 1} / {activePersistentSheet.imageSrcs.length}</span>
-                  <button onClick={() => { setIsPersistentSheetImageMissing(false); setActivePersistentSheetPageIndex((index) => Math.min(activePersistentSheet.imageSrcs!.length - 1, index + 1)); }} disabled={activePersistentSheetPageIndex >= activePersistentSheet.imageSrcs.length - 1}>→</button>
+                  <button
+                    onClick={goToPreviousPersistentSheetPage}
+                    disabled={activePersistentSheetPageIndex <= 0}
+                  >
+                    ← 前のページ
+                  </button>
+                  <span>{activePersistentSheetPageIndex + 1} / {activePersistentSheetPageCount}</span>
+                  <button
+                    onClick={goToNextPersistentSheetPage}
+                    disabled={activePersistentSheetPageIndex >= activePersistentSheetPageCount - 1}
+                  >
+                    次のページ →
+                  </button>
                 </div>
               )}
 
@@ -570,9 +766,10 @@ function App() {
                 </div>
               )}
 
+
               <button
                 className="sheet-close-button"
-                onClick={() => setActivePersistentSheetId(null)}
+                onClick={closePersistentSheet}
                 aria-label="シートを閉じる"
               >
                 閉じる
@@ -587,6 +784,7 @@ function App() {
             onPointerUp={stopPersistentSheetPan}
             onPointerCancel={stopPersistentSheetPan}
             onContextMenu={(event) => event.preventDefault()}
+            onClick={handlePersistentSheetStageClick}
           >
             {isPersistentSheetImageMissing ? (
               <div className="sheet-image-placeholder">
@@ -594,20 +792,32 @@ function App() {
                 <p>対応する画像を <code>public/sheets/</code> 以下に置くと、ここに表示されます。</p>
               </div>
             ) : (
-              <div className="sheet-image-canvas" style={{ width: `${persistentSheetScale}%` }}>
-                <img
-                  src={getSheetImageSrc(activePersistentSheet, activePersistentSheetPageIndex)}
-                  alt={activePersistentSheet.title}
-                  className="overview-sheet-image"
-                  draggable={false}
-                  onError={() => setIsPersistentSheetImageMissing(true)}
-                />
+              <div
+                className={`sheet-image-canvas ${activePersistentSheet.fileType === "pdf" || isPdfPath(activePersistentSheet.imageSrc) ? "is-pdf" : ""}`}
+                style={{ width: `${persistentSheetScale}%` }}
+              >
+                {activePersistentSheet.fileType === "pdf" || isPdfPath(activePersistentSheet.imageSrc) ? (
+                  <iframe
+                    key={`${activePersistentSheet.id}-${activePersistentSheetPageIndex}`}
+                    src={getSheetImageSrc(activePersistentSheet, activePersistentSheetPageIndex)}
+                    title={activePersistentSheet.title}
+                    className="sheet-pdf-frame"
+                  />
+                ) : (
+                  <img
+                    src={getSheetImageSrc(activePersistentSheet, activePersistentSheetPageIndex)}
+                    alt={activePersistentSheet.title}
+                    className="overview-sheet-image"
+                    draggable={false}
+                    onError={() => setIsPersistentSheetImageMissing(true)}
+                  />
+                )}
               </div>
             )}
           </div>
 
           <p className="sheet-viewer-help">
-            ウィンドウ本体を長押ししながらドラッグすると位置を動かせます。シート画像の上では左クリック長押し＋ドラッグで視点を移動できます。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
+            複数ページのシートは、画像の左半分クリックで前ページ、右半分クリックで次ページへ切り替えられます。スマホで見にくい場合は「全画面表示」を押してください。閉じるボタン / Eキー / 左の捜査資料で閉じられます。
           </p>
         </section>
       </div>
@@ -653,6 +863,7 @@ function App() {
   };
 
   const createRoom = async () => {
+  try {
     const newRoomId = Math.random().toString(36).slice(2, 8).toUpperCase();
 
     await setDoc(doc(db, "rooms", newRoomId), {
@@ -669,24 +880,27 @@ function App() {
       specialInvestigationSheets: initialSpecialInvestigationSheets,
       manualSheetViewers: {},
       publicSheetIds: [],
+      ruleSheetDistributed: false,
+      overviewSheetDistributed: false,
       characterSheetsDistributed: false,
-      questionTimeStarted: false,
       investigationRound: 1,
       investigationTurnOrder: turnOrder,
       investigationOrderDecided: false,
       investigationStarted: false,
       investigationStartedAt: null,
-      investigationDurationSeconds: 20 * 60,
-      additionalInfoDistributed: false,
       privateTalk: null,
       votes: {},
-      endingSheetRoleName: null,
+      endingSheetId: null,
     });
 
     setMyCharacter("GM");
     setJoinedRoomId(newRoomId);
     setScreen("game");
-  };
+  } catch (error) {
+    console.error("ルーム作成に失敗しました:", error);
+    alert("ルーム作成に失敗しました。Consoleの赤いエラーを確認してください。");
+  }
+};
 
   const joinRoom = async () => {
     const id = roomIdInput.trim().toUpperCase();
@@ -775,20 +989,37 @@ function App() {
     });
   };
 
-  const distributeCharacterSheets = async () => {
+  const distributeRuleSheet = async () => {
     if (!room || !isGm) return;
 
     await updateDoc(doc(db, "rooms", joinedRoomId), {
-      characterSheetsDistributed: true,
-      questionTimeStarted: false,
+      ruleSheetDistributed: true,
     });
   };
 
-  const startQuestionTime = async () => {
+  const distributeOverviewSheet = async () => {
     if (!room || !isGm) return;
 
+    if (!room.ruleSheetDistributed) {
+      alert("先にルール説明シートを配布してください");
+      return;
+    }
+
     await updateDoc(doc(db, "rooms", joinedRoomId), {
-      questionTimeStarted: true,
+      overviewSheetDistributed: true,
+    });
+  };
+
+  const distributeCharacterSheets = async () => {
+    if (!room || !isGm) return;
+
+    if (!room.overviewSheetDistributed) {
+      alert("先に作品概要シートを配布してください");
+      return;
+    }
+
+    await updateDoc(doc(db, "rooms", joinedRoomId), {
+      characterSheetsDistributed: true,
     });
   };
 
@@ -851,7 +1082,6 @@ function App() {
       investigationTurnOrder: order,
       investigationStarted: true,
       investigationStartedAt: Date.now(),
-      investigationDurationSeconds: 20 * 60,
       currentTurnIndex: 0,
       currentTurnCharacter: order[0] || "A",
     });
@@ -864,14 +1094,6 @@ function App() {
       phase: "break",
       investigationStarted: false,
       investigationStartedAt: null,
-    });
-  };
-
-  const distributeAdditionalInfo = async () => {
-    if (!room || !isGm) return;
-
-    await updateDoc(doc(db, "rooms", joinedRoomId), {
-      additionalInfoDistributed: true,
     });
   };
 
@@ -888,18 +1110,6 @@ function App() {
       investigationTurnOrder: room.investigationTurnOrder || joinedSlots,
       currentTurnIndex: 0,
       currentTurnCharacter: (room.investigationTurnOrder || joinedSlots)[0] || "A",
-    });
-  };
-
-  const goDebate = async () => {
-    if (!room || !isGm) return;
-
-    await updateDoc(doc(db, "rooms", joinedRoomId), {
-      phase: "debate",
-      privateTalk: null,
-      cells: (room.cells || []).map((cell) => ({ ...cell, privateViewers: [] })),
-      investigationStarted: false,
-      investigationStartedAt: null,
     });
   };
 
@@ -935,12 +1145,39 @@ function App() {
     });
   };
 
-  const goEnding = async (roleName?: string) => {
+  const getEndingSheetIdFromVotes = (targetRoom: Room): EndingSheetId | null => {
+    const voteValues = Object.values(targetRoom.votes || {});
+    if (!voteValues.length) return null;
+
+    const voteCounts = turnOrder.reduce<Record<string, number>>((acc, slot) => {
+      acc[slot] = voteValues.filter((targetSlot) => targetSlot === slot).length;
+      return acc;
+    }, {});
+
+    const maxVoteCount = Math.max(...Object.values(voteCounts));
+    if (maxVoteCount <= 0) return null;
+
+    const topSlot = turnOrder.find((slot) => voteCounts[slot] === maxVoteCount);
+    const topRoleName = topSlot ? targetRoom.characterAssignments?.[topSlot] : null;
+    return endingDefinitions.find((definition) => definition.targetRoleName === topRoleName)?.id || null;
+  };
+
+  const goEnding = async () => {
     if (!room || !isGm) return;
+
+    const endingSheetId = getEndingSheetIdFromVotes(room);
+
+    if (!endingSheetId) {
+      alert("投票結果からエンディングを決定できません。投票が入っているか確認してください");
+      return;
+    }
 
     await updateDoc(doc(db, "rooms", joinedRoomId), {
       phase: "ending",
-      endingSheetRoleName: roleName || null,
+      endingSheetId,
+      privateTalk: null,
+      cells: (room.cells || []).map((cell) => ({ ...cell, isPublic: true, privateViewers: [], viewers: [] })),
+      specialInvestigationSheets: (room.specialInvestigationSheets || []).map((sheet) => ({ ...sheet, isPublic: true })),
     });
   };
 
@@ -989,7 +1226,7 @@ function App() {
   };
 
   const getCellRoleNameFromColumn = (columnIndex: number) => {
-    const roleNames = ["川岸道也", "宮崎圭", "緑野大地", "黒坂秀樹", "谷アリス"];
+    const roleNames = ["川岸道也", "梅村萌絵", "緑野大地", "黒坂秀樹", "水谷アリス"];
     return columnIndex >= 0 && columnIndex < roleNames.length ? roleNames[columnIndex] : null;
   };
 
@@ -1346,8 +1583,9 @@ function App() {
         isGm={isGm}
         myCharacter={myCharacter}
         playerName={playerName}
+        onDistributeRuleSheet={distributeRuleSheet}
+        onDistributeOverviewSheet={distributeOverviewSheet}
         onDistributeSheets={distributeCharacterSheets}
-        onStartQuestionTime={startQuestionTime}
         onNext={goInvestigation}
         onShareSheetWithPlayer={togglePersistentSheetForPlayer}
         onToggleSheetPublic={togglePersistentSheetPublic}
@@ -1356,7 +1594,7 @@ function App() {
     );
   }
 
-  if (room.phase === "investigation" || room.phase === "break" || room.phase === "debate" || room.phase === "reasoning") {
+  if (room.phase === "investigation" || room.phase === "break" || room.phase === "reasoning") {
     return renderPostOpeningLayout(
       <InvestigationScreen
         room={room}
@@ -1369,9 +1607,7 @@ function App() {
         onUseThunder={useThunder}
         onAddThunder={addThunder}
         onGoBreak={goBreak}
-        onDistributeAdditionalInfo={distributeAdditionalInfo}
         onGoInvestigation2={goInvestigation2}
-        onGoDebate={goDebate}
         onUpdateInvestigationOrder={updateInvestigationOrder}
         onStartInvestigation={startInvestigationTimer}
         onStartPrivateTalk={startPrivateTalk}
@@ -1391,22 +1627,44 @@ function App() {
         isGm={isGm}
         myCharacter={myCharacter}
         playerName={playerName}
-        onGoVote={goVote}
         onSubmitVote={submitVote}
         onGoEnding={goEnding}
-        onGoReasoning={goReasoning}
       />
     );
   }
 
   return renderPostOpeningLayout(
-    <EndingScreen
-      room={room}
-      isGm={isGm}
-      myCharacter={myCharacter}
-      playerName={playerName}
-      onLeave={leaveRoom}
-    />
+    <div className="ending-with-board">
+      <EndingScreen
+        room={room}
+        isGm={isGm}
+        myCharacter={myCharacter}
+        playerName={playerName}
+        onLeave={leaveRoom}
+      />
+
+      <InvestigationScreen
+        room={room}
+        isGm={isGm}
+        myCharacter={myCharacter}
+        playerName={playerName}
+        onClaimCell={claimCell}
+        onToggleCellPublic={toggleCellPublic}
+        onToggleCellPrivateShare={toggleCellPrivateShare}
+        onUseThunder={useThunder}
+        onAddThunder={addThunder}
+        onGoBreak={goBreak}
+        onGoInvestigation2={goInvestigation2}
+        onUpdateInvestigationOrder={updateInvestigationOrder}
+        onStartInvestigation={startInvestigationTimer}
+        onStartPrivateTalk={startPrivateTalk}
+        onEndPrivateTalk={endPrivateTalk}
+        onTransferCellPrivateTalkTarget={transferCellToPrivateTalkTarget}
+        onGoReasoning={goReasoning}
+        onGoVote={goVote}
+        onLeave={leaveRoom}
+      />
+    </div>
   );
 }
 

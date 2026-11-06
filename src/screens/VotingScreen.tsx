@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Room } from "../gameTypes";
-import { characterNames, turnOrder } from "../gameConstants";
+import { turnOrder } from "../gameConstants";
 
 type VotingScreenProps = {
   room: Room;
   isGm: boolean;
   myCharacter: string;
   playerName: string;
-  onGoVote: () => void;
   onSubmitVote: (targetSlot: string) => void;
-  onGoEnding: (roleName?: string) => void;
-  onGoReasoning: () => void;
+  onGoEnding: () => void;
 };
+
+const endingDefinitions = [
+  { title: "エンディング①", targetRoleName: "川岸道也" },
+  { title: "エンディング②", targetRoleName: "梅村萌絵" },
+  { title: "エンディング③", targetRoleName: "緑野大地" },
+  { title: "エンディング④", targetRoleName: "黒坂秀樹" },
+  { title: "エンディング⑤", targetRoleName: "水谷アリス" },
+];
 
 function getDisplayName(room: Room, slot: string) {
   const participantName = room.players?.[slot] || "未入室";
@@ -19,21 +25,35 @@ function getDisplayName(room: Room, slot: string) {
   return `${participantName}：${roleName}`;
 }
 
+function getTopVotedSlot(room: Room, joinedSlots: string[]) {
+  const voteValues = Object.values(room.votes || {});
+  if (!voteValues.length) return null;
+
+  const counts = joinedSlots.reduce<Record<string, number>>((acc, slot) => {
+    acc[slot] = voteValues.filter((targetSlot) => targetSlot === slot).length;
+    return acc;
+  }, {});
+
+  const maxCount = Math.max(...Object.values(counts));
+  if (maxCount <= 0) return null;
+
+  return joinedSlots.find((slot) => counts[slot] === maxCount) || null;
+}
+
+function getEndingTitleForRole(roleName?: string) {
+  return endingDefinitions.find((definition) => definition.targetRoleName === roleName)?.title || "未確定";
+}
 
 function VotingScreen({
   room,
   isGm,
   myCharacter,
   playerName,
-  onGoVote,
   onSubmitVote,
   onGoEnding,
-  onGoReasoning,
 }: VotingScreenProps) {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
-  const [selectedEndingRoleName, setSelectedEndingRoleName] = useState("");
-  const [showInvestigationEndSplash, setShowInvestigationEndSplash] = useState(room.phase === "reasoning");
 
   const joinedSlots = useMemo(
     () => turnOrder.filter((slot) => Boolean(room.players?.[slot])),
@@ -42,14 +62,9 @@ function VotingScreen({
 
   const votes = room.votes || {};
   const hasVoted = Boolean(votes[myCharacter]);
-
-
-  useEffect(() => {
-    if (room.phase !== "reasoning") return;
-    setShowInvestigationEndSplash(true);
-    const timerId = window.setTimeout(() => setShowInvestigationEndSplash(false), 2600);
-    return () => window.clearTimeout(timerId);
-  }, [room.phase]);
+  const topVotedSlot = getTopVotedSlot(room, joinedSlots);
+  const topVotedRoleName = topVotedSlot ? room.characterAssignments?.[topVotedSlot] : undefined;
+  const selectedEndingTitle = getEndingTitleForRole(topVotedRoleName);
 
   const handleVoteClick = () => {
     if (!selectedTarget) {
@@ -64,54 +79,6 @@ function VotingScreen({
     onSubmitVote(confirmTarget);
     setConfirmTarget(null);
   };
-
-
-  if (room.phase === "debate") {
-    return (
-      <section className="card dark-panel reasoning-card debate-card">
-        <div className="section-kicker">DEBATE</div>
-        <h2>議論(密談不可)</h2>
-        <p className="muted-text">
-          {isGm ? "GMとして進行中" : `あなたの名前：${playerName}`}
-        </p>
-        <p>全体議論の時間です。この時間は密談できません。</p>
-        {isGm && (
-          <div className="investigation-actions-row gm-investigation-actions">
-            <button className="primary-action-button" onClick={onGoReasoning}>推理へ</button>
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  if (room.phase === "reasoning") {
-    return (
-      <section className="card dark-panel reasoning-card">
-        <div className="section-kicker">REASONING</div>
-        <h2>推理</h2>
-        <p className="muted-text">
-          {isGm ? "GMとして進行中" : `あなたの名前：${playerName}`}
-        </p>
-        <p>取得した情報を整理し、犯人だと思う人物を決めてください。</p>
-
-        {isGm && (
-          <div className="investigation-actions-row gm-investigation-actions">
-            <button className="primary-action-button" onClick={onGoVote}>
-              投票へ
-            </button>
-          </div>
-        )}
-
-        {showInvestigationEndSplash && (
-          <div className="role-reveal-splash investigation-end-splash" aria-live="polite">
-            <div className="role-reveal-card">
-              <strong>調査終了</strong>
-            </div>
-          </div>
-        )}
-      </section>
-    );
-  }
 
   if (isGm) {
     return (
@@ -133,22 +100,18 @@ function VotingScreen({
         </div>
 
         <div className="manual-ending-box">
-          <h3>配布するエンディングシートを選択</h3>
-          <div className="ending-select-list">
-            {characterNames.map((roleName) => (
-              <button
-                key={roleName}
-                className={selectedEndingRoleName === roleName ? "selected" : ""}
-                onClick={() => setSelectedEndingRoleName(roleName)}
-              >
-                {roleName}
-              </button>
-            ))}
-          </div>
+          <h3>配布されるエンディング</h3>
+          {topVotedSlot ? (
+            <p>
+              最多投票：{getDisplayName(room, topVotedSlot)} → {selectedEndingTitle}
+            </p>
+          ) : (
+            <p>まだ投票がありません。</p>
+          )}
         </div>
 
         <div className="investigation-actions-row gm-investigation-actions">
-          <button className="primary-action-button" onClick={() => onGoEnding(selectedEndingRoleName)} disabled={!selectedEndingRoleName}>
+          <button className="primary-action-button" onClick={onGoEnding} disabled={!topVotedSlot}>
             エンディングシートを配布
           </button>
         </div>

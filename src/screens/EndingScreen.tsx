@@ -8,8 +8,16 @@ type EndingScreenProps = {
   onLeave?: () => void;
 };
 
+const endingTitles: Record<string, string> = {
+  "ending-1": "エンディング①",
+  "ending-2": "エンディング②",
+  "ending-3": "エンディング③",
+  "ending-4": "エンディング④",
+  "ending-5": "エンディング⑤",
+};
+
 function EndingScreen({ room, isGm, playerName }: EndingScreenProps) {
-  const endingRoleName = room.endingSheetRoleName || "未確定";
+  const endingSheetTitle = room.endingSheetId ? endingTitles[room.endingSheetId] || room.endingSheetId : "未確定";
 
   return (
     <section className="card dark-panel ending-card">
@@ -20,8 +28,8 @@ function EndingScreen({ room, isGm, playerName }: EndingScreenProps) {
       </p>
 
       <div className="ending-sheet-notice">
-        <strong>{endingRoleName} のエンディングシートを配布しました</strong>
-        <p>左側の捜査資料からエンディングシートを確認できます。</p>
+        <strong>{endingSheetTitle} を配布しました</strong>
+        <p>左側の捜査資料から、エンディングシートと調査シートを確認できます。</p>
       </div>
     </section>
   );

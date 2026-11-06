@@ -15,19 +15,21 @@ public/sheets/maps/floor-map-2.png
 
 ## キャラクターシート
 
+各PDFは4ページ構成です。
+
 ```txt
-public/sheets/characters/kawagishi-michiya.png
-public/sheets/characters/miyazaki-kei.png
-public/sheets/characters/midorino-daichi.png
-public/sheets/characters/kurosaka-hideki.png
-public/sheets/characters/tani-alice.png
+public/sheets/characters/kawagishi-michiya.pdf
+public/sheets/characters/umemura-moe.pdf
+public/sheets/characters/midorino-daichi.pdf
+public/sheets/characters/kurosaka-hideki.pdf
+public/sheets/characters/tani-alice.pdf
 ```
 
 ## 追加シート
 
 ```txt
 public/sheets/additional/kawagishi-michiya.png
-public/sheets/additional/miyazaki-kei.png
+public/sheets/additional/umemura-moe.png
 public/sheets/additional/midorino-daichi.png
 public/sheets/additional/kurosaka-hideki.png
 public/sheets/additional/tani-alice.png
@@ -86,7 +88,7 @@ public/sheets/special-investigation/special-5.png
 
 ```txt
 public/sheets/endings/kawagishi-michiya.png
-public/sheets/endings/miyazaki-kei.png
+public/sheets/endings/umemura-moe.png
 public/sheets/endings/midorino-daichi.png
 public/sheets/endings/kurosaka-hideki.png
 public/sheets/endings/tani-alice.png
